@@ -92,6 +92,15 @@ func (s *StirrClient) GetStation() (string, error) {
 func (s *StirrClient) GetChannels() ([]Channel, error) {
 	var lineup Lineup
 	reqErr := s.makeRequest("https://ott-gateway-stirr.sinclairstoryline.com/api/rest/v3/channels/stirr", &lineup)
+	categories := make(map[string]string)
+	for _, cat := range lineup.Categories {
+		categories[cat.UUID] = cat.Name
+	}
+	for x, ch := range lineup.Channels {
+		for y, cat := range ch.Categories {
+			lineup.Channels[x].Categories[y].Name = categories[cat.UUID]
+		}
+	}
 	return lineup.Channels, reqErr
 }
 
@@ -131,6 +140,7 @@ func (s *StirrClient) FillCache() error {
 			log.Println("Ignoring channel error on", channel.DisplayName, ":", statusErr)
 			continue
 		}
+		status.Channel = &lineup[idx]
 		status.Number = idx + 1
 
 		status.ID = fmt.Sprintf("stirr-%s", channel.ID)

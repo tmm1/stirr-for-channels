@@ -64,12 +64,21 @@ type Channel struct {
 	Icon        struct {
 		Src string `json:"src"`
 	} `json:"icon"`
-	ID         string        `json:"id"`
-	Categories []interface{} `json:"categories"`
+	ID         string `json:"id"`
+	Categories []struct {
+		Name string `json:"name"`
+		UUID string `json:"uuid"`
+	} `json:"categories"`
+}
+
+type Category struct {
+	Name string `json:"name"`
+	UUID string `json:"uuid"`
 }
 
 type Lineup struct {
-	Channels []Channel `json:"channel"`
+	Categories []Category `json:"categories"`
+	Channels   []Channel  `json:"channel"`
 }
 
 type Image struct {
@@ -81,6 +90,7 @@ type Image struct {
 
 type ChannelStatus struct {
 	ID       string
+	Channel  *Channel
 	Programs []Program
 	Number   int
 	Rss      struct {
@@ -154,7 +164,7 @@ func (c *ChannelStatus) M3ULine() string {
 func (c *ChannelStatus) XMLTV() xmltv.Channel {
 	return xmltv.Channel{
 		DisplayNames: []xmltv.CommonElement{{
-			Value: c.Rss.Channel.Title,
+			Value: strings.TrimSpace(c.Rss.Channel.Title),
 		}, {
 			Value: strconv.Itoa(c.Number),
 		}},
@@ -185,23 +195,34 @@ func (p *Program) XMLTV(cs ChannelStatus) xmltv.Programme {
 		tmp := xmltv.ElementPresent(p.IsLive)
 		live = &tmp
 	}
-	for x, c := range p.Categories {
+	var categories []xmltv.CommonElement
+	for _, cat := range cs.Channel.Categories {
+		name := cat.Name
+		if name == "Movies" {
+			name = "Movie"
+		}
+		if name == "" || name == "Other" {
+			continue
+		}
+		categories = append(categories, xmltv.CommonElement{Value: name})
+	}
+	for _, c := range p.Categories {
 		if c.Value == "HD Unknown" {
-			p.Categories[x].Value = "HD"
+			categories = append(categories, xmltv.CommonElement{Value: "HD"})
+		} else if c.Value != "category" && c.Value != "Other" {
+			categories = append(categories, xmltv.CommonElement{Value: c.Value})
 		}
 	}
-	if strings.HasSuffix(cs.Rss.Channel.Title, "Movies") {
-		p.Categories = append(p.Categories, xmltv.CommonElement{Value: "Movie"})
-	}
-	return xmltv.Programme{
+	pg := xmltv.Programme{
 		Titles:       []xmltv.CommonElement{p.Title},
 		Descriptions: []xmltv.CommonElement{p.Description},
-		Categories:   p.Categories,
+		Categories:   categories,
 		Start:        &start,
 		Stop:         &stop,
 		Live:         live,
 		Channel:      fmt.Sprintf("stirr-%s", p.Channel),
 	}
+	return pg
 }
 
 type GuideData struct {
