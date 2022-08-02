@@ -275,6 +275,45 @@ func main() {
 		log.Fatalln("Error when filling cache", fillErr)
 	}
 
+	if os.Getenv("ONESHOT") != "" {
+		log.Println("Writing playlist.m3u")
+		fp, err := os.OpenFile("playlist.m3u", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Fprintf(fp, "#EXTM3U\n")
+		for _, channel := range client.channels {
+			fmt.Fprintf(fp, "%s\n\n", channel.M3ULine())
+		}
+		fp.Close()
+
+		log.Println("Writing epg.xml")
+		fp, err = os.OpenFile("epg.xml", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+		if err != nil {
+			panic(err)
+		}
+		epg := &xmltv.TV{
+			GeneratorInfoName: "stirr-for-channels",
+			GeneratorInfoURL:  "https://github.com/robbiet480/stirr-for-channels",
+		}
+		for _, channel := range client.channels {
+			epg.Channels = append(epg.Channels, channel.XMLTV())
+			for _, program := range channel.Programs {
+				epg.Programmes = append(epg.Programmes, program.XMLTV(channel))
+			}
+		}
+
+		buf, err := xml.MarshalIndent(epg, "", "\t")
+		if err != nil {
+			panic(err)
+		}
+		fp.Write([]byte(xml.Header + `<!DOCTYPE tv SYSTEM "xmltv.dtd">` + "\n" + string(buf)))
+		fp.Close()
+
+		log.Println("All done")
+		return
+	}
+
 	ticker := time.NewTicker(30 * time.Minute)
 	quit := make(chan struct{})
 	go func() {
