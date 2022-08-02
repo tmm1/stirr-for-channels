@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,12 @@ import (
 // 20060102150405
 
 const stLayout = "20060102150405"
+
+var (
+	seasonEpisodeTitleMatcher = regexp.MustCompile(`^(.+)\s*\(S(\d+),E(\d+)\)$`)
+	seasonEpisodeDescMatcher = regexp.MustCompile(`^\s*(?:S(\d+)[ :,]?)?E(\d+)[: -]\s*(.+)$`)
+	ratingDescMatcher = regexp.MustCompile(`\[(?:Not Rated|Rated (.+?))\]`)
+)
 
 // type StirrTime time.Time
 
@@ -213,14 +220,72 @@ func (p *Program) XMLTV(cs ChannelStatus) xmltv.Programme {
 			categories = append(categories, xmltv.CommonElement{Value: c.Value})
 		}
 	}
+	var season, episode int
+	var rating string
+	title := p.Title
+	desc := p.Description
+	if matches := seasonEpisodeTitleMatcher.FindStringSubmatch(title.Value); len(matches) > 1 {
+		title.Value = strings.TrimSpace(matches[1])
+		season, _ = strconv.Atoi(matches[2])
+		episode, _ = strconv.Atoi(matches[3])
+	}
+	if matches := seasonEpisodeDescMatcher.FindStringSubmatch(desc.Value); len(matches) > 1 {
+		desc.Value = strings.TrimSpace(matches[3])
+		season, _ = strconv.Atoi(matches[1])
+		episode, _ = strconv.Atoi(matches[2])
+	}
+	if matches := ratingDescMatcher.FindStringSubmatch(desc.Value); len(matches) > 1 {
+		// add rating
+		rating = matches[1]
+		if rating == "" {
+			rating = matches[0]
+		}
+		if rating == "[Not Rated]" {
+			rating = "NR"
+		}
+
+		// add Movie category if not present
+		found := false
+		for _, cat := range categories {
+			if cat.Value == "Movie" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			categories = append(categories, xmltv.CommonElement{Value: "Movie"})
+		}
+	}
 	pg := xmltv.Programme{
-		Titles:       []xmltv.CommonElement{p.Title},
-		Descriptions: []xmltv.CommonElement{p.Description},
+		Titles:       []xmltv.CommonElement{title},
+		Descriptions: []xmltv.CommonElement{desc},
 		Categories:   categories,
 		Start:        &start,
 		Stop:         &stop,
 		Live:         live,
 		Channel:      fmt.Sprintf("stirr-%s", p.Channel),
+	}
+	if season > 0 && episode > 0 {
+		pg.EpisodeNums = []xmltv.EpisodeNum{
+			{
+				System: "onscreen",
+				Value:  fmt.Sprintf("S%dE%d", season, episode),
+			},
+		}
+	} else if episode > 0 {
+		pg.EpisodeNums = []xmltv.EpisodeNum{
+			{
+				System: "onscreen",
+				Value:  fmt.Sprintf("E%d", episode),
+			},
+		}
+	}
+	if rating != "" {
+		pg.Ratings = []xmltv.Rating{
+			{
+				Value: rating,
+			},
+		}
 	}
 	return pg
 }
